@@ -89,6 +89,22 @@ bot.command :cards do |event, name=""|
     end
 end
 
+#testing embeds
+
+bot.command :test do |e|
+e.channel.send_embed do |embed|
+    embed.title = "Vyee"
+    embed.description = "-"
+    embed.color = "d60000"
+    embed.thumbnail = Discordrb::Webhooks::EmbedThumbnail.new(url: "https://cdn.discordapp.com/avatars/322845778127224832/a7b64895365176e9fe98be98dac0d72b.webp")
+    fields = [Discordrb::Webhooks::EmbedField.new({name: "Kanji", value: "123", inline: true}),
+                Discordrb::Webhooks::EmbedField.new({name: "Vocab", value: "789", inline: true}),
+                Discordrb::Webhooks::EmbedField.new({name: "Total", value: "456", inline: true})]
+    embed.fields = fields
+    embed.footer = Discordrb::Webhooks::EmbedFooter.new(text: "Created by Vincent Y")
+end
+end
+
 # database
 
 db = SQLite3::Database.open "card_counter.db"
