@@ -1,45 +1,13 @@
-require "sqlite3"
+require 'sqlite3'
+require './card_counter.rb'
 
-db = SQLite3::Database.new "card_counter.db"
+db = SQLite3::Database.open "card_counter.db"
+db.execute "CREATE TABLE IF NOT EXISTS stats(userId varchar(20), kanji INT, vocab INT, total INT)"
+db.results_as_hash = true
 
-# Create a table
-rows = db.execute <<-SQL
-  create table cards (
-    userId varchar(30),
-    kanji int,
-    vocabulary int,
-    total int
-  );
-SQL
 
-# Execute a few inserts
-{
-  "one" => 1,
-  "two" => 2,
-}.each do |pair|
-  db.execute "insert into numbers values ( ?, ? )", pair
-end
+# db commands
 
-# Find a few rows
-db.execute( "select * from numbers" ) do |row|
-  p row
-end
-
-# Create another table with multiple columns
-
-db.execute <<-SQL
-  create table students (
-    name varchar(50),
-    email varchar(50),
-    grade varchar(5),
-    blog varchar(50)
-  );
-SQL
-
-# Execute inserts with parameter markers
-db.execute("INSERT INTO students (name, email, grade, blog) 
-            VALUES (?, ?, ?, ?)", ["Jane", "me@janedoe.com", "A", "http://blog.janedoe.com"])
-
-db.execute( "select * from students" ) do |row|
-  p row
+def add_to_database(userId, type, int)
+    p "yes"
 end
