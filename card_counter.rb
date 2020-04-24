@@ -35,7 +35,7 @@ bot.command :help do |event|
     event << "Commands"
     event << "Subtract cards: ;subtract [kanji/vocab] [number]"
     event << "Add cards: ;add [kanji/vocab] [number]"
-    event << "Total cards: ;cards [@user]"
+    event << "Total cards: ;cards [@user/user id/(empty)]"
 end
 
 bot.command :add do |event, cardType, int|
@@ -68,17 +68,23 @@ bot.message(content: 'Ping!') do |event|
   event.respond 'Pong!'
 end
 
-bot.command :cards do |event, name|
+bot.command :cards do |event, name=""|
     begin
         db = SQLite3::Database.open "card_counter.db"
         db.results_as_hash = true
-        name = name[3..20].to_i
-        results = db.query "SELECT kanji, vocab FROM stats WHERE userId=?", name
-        results = results.first
-        event.respond "#{bot.user(name).username} has finished #{results["kanji"]} Kanji cards and #{results["vocab"]} Vocab cards"
-        results.close
+        if name[0..1] == "<@"
+            name = name[3..20].to_i
+        elsif name == ""
+            name = event.user.id
+        elsif name.to_i.is_a?(Integer) && name.length == 18
+        else
+            event.respond "That is not a valid command"
+            break
+        end
+        db.execute ("SELECT kanji, vocab FROM stats WHERE userId=#{name}") do |row|
+            event.respond "#{bot.user(name).name.capitalize} has finished #{row["kanji"]} Kanji cards and #{row["vocab"]} Vocab cards"
+        end
     ensure
-        p db.closed?
         db.close if db
     end
 end
