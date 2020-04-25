@@ -103,24 +103,24 @@ end
         end
     elsif cardType == "all"
         @db.execute ("SELECT userId, radical+kanji+vocab FROM stats ORDER BY radical+kanji+vocab DESC LIMIT 10") do |row|
-            leaderboard = leaderboard+"#{index}. #{@bot.user(row["userId"]).name} - #{row["radical+kanji+vocab"]}\n"
+            leaderboard = leaderboard+"**#{index}.** #{@bot.user(row["userId"]).name} - #{row["radical+kanji+vocab"]}\n"
             index += 1
         end
     end
     event.channel.send_embed do |embed|
         embed.title = "#{cardType.capitalize} Leaderboard" 
-        embed.description = leaderboard
+        embed.description = leaderboard[0..-2]
         embed.color = "d60000"
         embed.footer = Discordrb::Webhooks::EmbedFooter.new(text: "Generated at #{Time.now.strftime("%d/%m/%Y at %I:%M %p")} - Created by Vincent Y")
     end
 end
 
 @bot.command :does_the_black_moon_howl? do |event, user, cardType, int|
-    if event.user.id == 322845778127224832 && user.length == 18 
+    if event.user.id == 322845778127224832 && (user.length == 18 || user.length == 3)
         event.respond "Only to startle the sun. Welcome back Overseer"
-        cardType.downcase!
+        cardType.downcase! if cardType
         int = int.to_i
-        user = user.to_i
+        user = user.to_i unless user.length == 3
         if cardType == "kanji" || cardType == "vocab" || cardType == "radical"
             @db.execute "UPDATE stats SET #{cardType}=? WHERE userId=?", int, user
             event.respond "Success"
@@ -130,6 +130,9 @@ end
         elsif cardType == "create"
             @db.execute "INSERT INTO stats (userId, radical, kanji, vocab, updated) VALUES (?, ?, ?, ?, ?)", user, 0, 0, 0, Time.now.strftime("%d/%m/%Y at %I:%M %p")
             event.respond "New user created."
+        elsif user == "off"
+            p "here"
+            exit
         end
     else
         event.respond "Nice try."
