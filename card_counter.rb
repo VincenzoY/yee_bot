@@ -27,22 +27,31 @@ puts 'Click on it to invite it to your server.'
 
 # Commands
 
-bot.command :user do |event|
-    event.user.id
+bot.message(content: 'Ping!') do |event|
+    event.respond 'Pong!'
 end
 
 bot.command :help do |event|
-    event << "Commands"
-    event << "Subtract cards: ;subtract [kanji/vocab] [number]"
-    event << "Add cards: ;add [kanji/vocab] [number]"
-    event << "Total cards: ;cards [@user/user id/(empty)]"
+    event.channel.send_embed do |embed|
+        embed.title = "Commands"
+        embed.description = "-"
+        embed.color = "d60000"
+        embed.thumbnail = Discordrb::Webhooks::EmbedThumbnail.new(url: event.server.icon_url)
+        fields = [Discordrb::Webhooks::EmbedField.new({name: "Add Cards", value: ";add [kanji/vocab] [number]"}),
+                    Discordrb::Webhooks::EmbedField.new({name: "Subtract Cards", value: ";subtract [kanji/vocab] [number]"}),
+                    Discordrb::Webhooks::EmbedField.new({name: "Total", value: ";cards [@user/user id/(empty)]"})]
+        embed.fields = fields
+        embed.footer = Discordrb::Webhooks::EmbedFooter.new(text: "Created by Vincent Y")
+    end
 end
 
 bot.command :add do |event, cardType, int|
     if Integer(int)
-        if cardType.downcase == "kanji" || cardType.downcase == "vocab" || cardType.downcase == "vocabulary"
-            add_to_database(event.user.id, cardType, Integer(int))
-            event.respond "Success! Added #{int} cards to #{cardType}"
+        int = Integer(int).abs()
+        if int > 500
+            event.respond "Sorry, you're adding too many cards at once" 
+        elsif cardType.downcase == "kanji" || cardType.downcase == "vocab"
+            add_to_database(event.user.id, cardType, int, event)
         else
             event.respond "Sorry, that's not a valid command. The format is ;add [card type] [integer]. Valid card types are Kanji or Vocab"
         end
@@ -52,20 +61,18 @@ bot.command :add do |event, cardType, int|
 end
 
 bot.command :subtract do |event, cardType, int|
-    if Integer(int).is_a?(Integer)
-        if cardType.downcase == "kanji" || cardType.downcase == "vocab" || cardType.downcase == "vocabulary"
-            subtract_database(event.user.id, cardType, Integer(int))
-            event.respond "Success! Subtracted #{int} cards to #{cardType}"
+    if Integer(int)
+        int = Integer(int).abs()
+        if int > 500
+            event.respond "Sorry, you're subtracting too many cards at once" 
+        elsif cardType.downcase == "kanji" || cardType.downcase == "vocab"
+            subtract_database(event.user.id, cardType, int, event)
         else
             event.respond "Sorry, that's not a valid command. The format is ;subtract [card type] [integer]. Valid card types are Kanji or Vocab"
         end
     else
         event.respond "#{int} is not a valid number."
     end
-end
-
-bot.message(content: 'Ping!') do |event|
-  event.respond 'Pong!'
 end
 
 bot.command :cards do |event, name=""|
@@ -82,27 +89,39 @@ bot.command :cards do |event, name=""|
             break
         end
         db.execute ("SELECT kanji, vocab FROM stats WHERE userId=#{name}") do |row|
-            event.respond "#{bot.user(name).name.capitalize} has finished #{row["kanji"]} Kanji cards and #{row["vocab"]} Vocab cards"
+            event.channel.send_embed do |embed|
+                embed.title = bot.user(name).name
+                embed.description = "-"
+                embed.color = "d60000"
+                embed.thumbnail = Discordrb::Webhooks::EmbedThumbnail.new(url: bot.user(name).avatar_url)
+                fields = [Discordrb::Webhooks::EmbedField.new({name: "Kanji", value: row["kanji"], inline: true}),
+                            Discordrb::Webhooks::EmbedField.new({name: "Vocab", value: row["vocab"], inline: true}),
+                            Discordrb::Webhooks::EmbedField.new({name: "Total", value: (row["kanji"]+row["vocab"]), inline: true})]
+                embed.fields = fields
+                embed.footer = Discordrb::Webhooks::EmbedFooter.new(text: "Created by Vincent Y")
+            end
         end
     ensure
         db.close if db
     end
 end
 
-#testing embeds
-
-bot.command :test do |e|
-e.channel.send_embed do |embed|
-    embed.title = "Vyee"
-    embed.description = "-"
-    embed.color = "d60000"
-    embed.thumbnail = Discordrb::Webhooks::EmbedThumbnail.new(url: "https://cdn.discordapp.com/avatars/322845778127224832/a7b64895365176e9fe98be98dac0d72b.webp")
-    fields = [Discordrb::Webhooks::EmbedField.new({name: "Kanji", value: "123", inline: true}),
-                Discordrb::Webhooks::EmbedField.new({name: "Vocab", value: "789", inline: true}),
-                Discordrb::Webhooks::EmbedField.new({name: "Total", value: "456", inline: true})]
-    embed.fields = fields
-    embed.footer = Discordrb::Webhooks::EmbedFooter.new(text: "Created by Vincent Y")
-end
+bot.command :does_the_black_moon_howl? do |event, user, cardType, int|
+    if event.user.id == 322845778127224832
+        event.respond "Only to startle the sun. Welcome back Overseer"
+        begin
+            db = SQLite3::Database.open "card_counter.db"
+            db.execute "UPDATE stats SET #{cardType}=? WHERE userId=?", int, user
+            event.respond "Success"
+        rescue => exception
+            db.execute "INSERT INTO stats (userId, kanji, vocab) VALUES (?, ?, ?)", user, 0, 0
+            event.respond "New user created. Try again."
+        ensure 
+            db.close if db
+        end
+    else
+        event.respond "Nice try."
+    end
 end
 
 # database
@@ -111,11 +130,16 @@ db = SQLite3::Database.open "card_counter.db"
 db.results_as_hash = true
 db.execute "CREATE TABLE IF NOT EXISTS stats(userId varchar(20), kanji INT, vocab INT)"
 
-def add_to_database(userId, cardType, int)
+def add_to_database(userId, cardType, int, event)
     begin
         db = SQLite3::Database.open "card_counter.db"
         previous = db.get_first_value "SELECT #{cardType} FROM stats WHERE userId=?", userId
-        db.execute "UPDATE stats SET #{cardType}=? WHERE userId=?", int+previous, userId
+        if previous > 20000
+            event.respond "Sorry, you've reached the limit of cards. If you think this is wrong please contact me."
+        else
+            db.execute "UPDATE stats SET #{cardType}=? WHERE userId=?", int+previous, userId
+            event.respond "Success! Added #{int} cards to #{cardType}"
+        end
     rescue => exception
         db.execute "INSERT INTO stats (userId, kanji, vocab) VALUES (?, ?, ?)", userId, 0, 0
         add_to_database(userId, cardType, int)
@@ -124,11 +148,16 @@ def add_to_database(userId, cardType, int)
     end
 end
 
-def subtract_database(userId, cardType, int)
+def subtract_database(userId, cardType, int, event)
     begin
         db = SQLite3::Database.open "card_counter.db"
         previous = db.get_first_value "SELECT #{cardType} FROM stats WHERE userId=?", userId
-        db.execute "UPDATE stats SET #{cardType}=? WHERE userId=?", Integer(previous-int), userId
+        if previous < 0
+            event.respond "Sorry, looks like you have too few cards. Try add some back."
+        else
+            db.execute "UPDATE stats SET #{cardType}=? WHERE userId=?", Integer(previous-int), userId
+            event.respond "Success! Subtracted #{int} cards to #{cardType}"
+        end
     ensure 
         db.close if db
     end
