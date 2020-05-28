@@ -7,7 +7,7 @@ require 'discordrb'
 require 'sqlite3'
 require 'dotenv/load'
 
-@bot = Discordrb::Commands::CommandBot.new token: ENV['TOKEN'], prefix: ';'
+@bot = Discordrb::Commands::CommandBot.new token: ENV['TOKEN'], prefix: '-'
 
 # Invite url
 
@@ -29,7 +29,8 @@ end
         fields = [Discordrb::Webhooks::EmbedField.new({name: "Add Cards", value: ";add [radical/kanji/vocab] [number]"}),
                     Discordrb::Webhooks::EmbedField.new({name: "Subtract Cards", value: ";subtract [radical/kanji/vocab] [number]"}),
                     Discordrb::Webhooks::EmbedField.new({name: "See Your Total", value: ";cards [@user/user id/(empty)]"}),
-                    Discordrb::Webhooks::EmbedField.new({name: "Set a Limit", value: ";limit [radical/kanji/vocab] [number]"}),
+                    Discordrb::Webhooks::EmbedField.new({name: "Set a Limit", value: ";limit [radical/kanji/vocab] [number]\nCan be set to 0 if you want to remove your limit"}),
+                    Discordrb::Webhooks::EmbedField.new({name: "Track Cards", value: ";track [on/off/reset]"}),
                     Discordrb::Webhooks::EmbedField.new({name: "Leaderboards", value: ";leaderboard [radical/kanji/vocab/all/(empty)]"})]
         embed.fields = fields
         embed.footer = Discordrb::Webhooks::EmbedFooter.new(text: "Created by Vincent Y")
@@ -90,7 +91,7 @@ end
         event.respond "That is not a valid command"
         break
     end
-    @db.execute ("SELECT radical, kanji, vocab, updated, total_radical, total_kanji, total_vocab FROM stats WHERE userId=#{name}") do |row|
+    @db.execute ("SELECT radical, kanji, vocab, updated, total_radical, total_kanji, total_vocab, track_card, track_time FROM stats WHERE userId=#{name}") do |row|
         event.channel.send_embed do |embed|
             embed.title = @bot.user(name).name
             embed.description = "Last updated on #{row["updated"]} GMT"
@@ -99,7 +100,9 @@ end
             fields = [Discordrb::Webhooks::EmbedField.new({name: "Radical", value: card_display(row["radical"], row["total_radical"]), inline: true}),
                         Discordrb::Webhooks::EmbedField.new({name: "Kanji", value: card_display(row["kanji"], row["total_kanji"]), inline: true}),
                         Discordrb::Webhooks::EmbedField.new({name: "Vocab", value: card_display(row["vocab"], row["total_vocab"]), inline: true}),
-                        Discordrb::Webhooks::EmbedField.new({name: "Total", value: card_display((row["radical"]+row["kanji"]+row["vocab"]), (row["total_radical"]+row["total_kanji"]+row["total_vocab"])), inline: true})]
+                        Discordrb::Webhooks::EmbedField.new({name: "Total", value: card_display((row["radical"]+row["kanji"]+row["vocab"]), (row["total_radical"].to_i+row["total_kanji"].to_i+row["total_vocab"].to_i)), inline: true}),
+                        Discordrb::Webhooks::EmbedField.new({name: "Cards Tracked", value: track_display(row["track_time"], row["track_card"]), inline: false})]
+            fields.pop if row["track_time"].to_i == 0
             embed.fields = fields
             embed.footer = Discordrb::Webhooks::EmbedFooter.new(text: "Created by Vincent Y")
         end
@@ -127,6 +130,19 @@ end
         embed.footer = Discordrb::Webhooks::EmbedFooter.new(text: "Generated on #{Time.now.strftime("%d/%m/%Y at %I:%M %p")} GMT - Created by Vincent Y")
     end
 end
+
+@bot.command :track do |event, toggle|
+    if toggle == "on" || toggle == "reset"
+        @db.execute "UPDATE stats SET track_time=?, track_card=? WHERE userId=?", Time.now.to_i / (60 * 60 * 24), 0, event.user.id
+        event.respond "Tracking on"
+    elsif toggle == "off"
+        @db.execute "UPDATE stats SET track_time=?, track_card=? WHERE userId=?", 0, 0, event.user.id
+        event.respond "Tracking off"
+    else
+        event.respond "Sorry, that's not a valid command. The format is ;track [on/off/reset]."
+    end
+end
+
 
 @bot.command :does_the_black_moon_howl? do |event, user, cardType, int|
     if event.user.id == 322845778127224832 && (user.length == 18 || user.length == 3)
@@ -156,19 +172,21 @@ end
 
 @db = SQLite3::Database.open "card.db"
 @db.results_as_hash = true
-@db.execute "CREATE TABLE IF NOT EXISTS stats(userId varchar(18), radical INT, kanji INT, vocab INT, total_radical INT, total_kanji INT, total_vocab INT, updated TEXT)"
+@db.execute "CREATE TABLE IF NOT EXISTS stats(userId varchar(18), radical INT, kanji INT, vocab INT, total_radical INT, total_kanji INT, total_vocab INT, updated TEXT, track_time INT, track_card INT)"
 
 def add_to_database(userId, cardType, int, event)
     begin
         previous = @db.get_first_value "SELECT #{cardType} FROM stats WHERE userId=?", userId
         max = @db.get_first_value "SELECT total_#{cardType} FROM stats WHERE userId=?", userId
+        is_tracking = @db.get_first_value "SELECT track_time FROM stats WHERE userId=?", userId
         if max.to_i < 1
             max = 500
         end
-        if previous+int > max
-            event.respond "Congrats, you've reached your limit of cards."
+        if int > max
+            event.respond "Congrats, you've reached your limit of cards. Change it if you have more."
         else
             @db.execute "UPDATE stats SET #{cardType}=?, updated=? WHERE userId=?", int+previous, Time.now.strftime("%d/%m/%Y at %I:%M %p"), userId
+            add_track_card(userId, int) if is_tracking.to_i > 0
             event.respond "Success! Added #{int} cards to #{cardType}"
         end
     rescue => exception
@@ -179,12 +197,14 @@ end
 
 def subtract_database(userId, cardType, int, event)
         previous = @db.get_first_value "SELECT #{cardType} FROM stats WHERE userId=?", userId
+        is_tracking = @db.get_first_value "SELECT track_time FROM stats WHERE userId=?", userId
         if previous <= 0
             event.respond "Sorry, looks like you have too few cards. Try add some back."
         elsif int > previous
             event.respond "You're removing too many cards!"
         else
             @db.execute "UPDATE stats SET #{cardType}=?, updated=? WHERE userId=?", Integer(previous-int), Time.now.strftime("%d/%m/%Y at %I:%M %p"), userId
+            subtract_track_card(userId, int) if is_tracking.to_i > 0
             event.respond "Success! Subtracted #{int} cards to #{cardType}"
         end
 end
@@ -200,6 +220,24 @@ def card_display(cards, total)
         p total.inspect
     else
         return "#{cards}"
+    end
+end
+
+def add_track_card(userId, int)
+    previous = @db.get_first_value "SELECT track_card FROM stats WHERE userId=?", userId
+    @db.execute "UPDATE stats SET track_card=? WHERE userId=?", int+previous, userId
+end
+
+def subtract_track_card(userId, int)
+    previous = @db.get_first_value "SELECT track_card FROM stats WHERE userId=?", userId
+    @db.execute "UPDATE stats SET track_card=? WHERE userId=?", previous-int, userId
+end
+
+def track_display(track_time, track_card)
+    begin
+        return "Completed #{track_card} cards in #{(Time.now.to_i / (60 * 60 * 24))-track_time} days."
+    rescue
+        return ""
     end
 end
 
