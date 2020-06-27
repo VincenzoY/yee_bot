@@ -216,7 +216,7 @@ end
 
 def card_display(cards, total)
     if total.to_i > 0
-        return "#{cards} / #{total}"
+        return "#{cards} / #{total} (#{(cards.to_f/total.to_f*100).round(1)}%)"
         p total.inspect
     else
         return "#{cards}"
