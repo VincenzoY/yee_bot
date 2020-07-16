@@ -1,2 +1,4 @@
 .env
 card.db
+graph_data.db
+graph.png

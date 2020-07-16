@@ -6,6 +6,8 @@
 require 'discordrb'
 require 'sqlite3'
 require 'dotenv/load'
+require 'date'
+require 'gruff'
 
 @bot = Discordrb::Commands::CommandBot.new token: ENV['TOKEN'], prefix: '-'
 
@@ -187,9 +189,11 @@ def add_to_database(userId, cardType, int, event)
         else
             @db.execute "UPDATE stats SET #{cardType}=?, updated=? WHERE userId=?", int+previous, Time.now.strftime("%d/%m/%Y at %I:%M %p"), userId
             add_track_card(userId, int) if is_tracking.to_i > 0
+            add_to_graph(userId, int)
             event.respond "Success! Added #{int} cards to #{cardType}"
         end
     rescue => exception
+        p exception
         @db.execute "INSERT INTO stats (userId, radical, kanji, vocab, total_radical, total_kanji, total_vocab, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", userId, 0, 0, 0, 0, 0, 0, Time.now.strftime("%d/%m/%Y at %I:%M %p")
         add_to_database(userId, cardType, int, event)
     end
@@ -205,7 +209,8 @@ def subtract_database(userId, cardType, int, event)
         else
             @db.execute "UPDATE stats SET #{cardType}=?, updated=? WHERE userId=?", Integer(previous-int), Time.now.strftime("%d/%m/%Y at %I:%M %p"), userId
             subtract_track_card(userId, int) if is_tracking.to_i > 0
-            event.respond "Success! Subtracted #{int} cards to #{cardType}"
+            subtract_from_graph(userId, int)
+            event.respond "Success! Subtracted #{int} cards from #{cardType}"
         end
 end
 
@@ -241,4 +246,76 @@ def track_display(track_time, track_card)
     end
 end
 
+# graph
+
+@graph_db = SQLite3::Database.open "graph_data.db"
+@graph_db.results_as_hash = true
+@graph_db.execute "CREATE TABLE IF NOT EXISTS graph(time INT)"
+
+def graph_time()
+    last_time = @graph_db.get_first_value "SELECT time FROM graph ORDER BY time DESC LIMIT 1"
+    last_time ||= 0
+    p last_time
+    if !(Time.at(last_time).to_date === Time.now.to_date)
+        @graph_db.execute "INSERT INTO graph (time) VALUES (?)", Time.now.to_date.to_time.to_i
+    end
+end
+
+def add_to_graph(userId, int)
+    today_date = Time.now.to_date.to_time.to_i
+    begin
+        previous = @graph_db.get_first_value "SELECT _#{userId} FROM graph WHERE time = ?", today_date
+        @graph_db.execute "UPDATE graph SET _#{userId}=? WHERE time=?", int+previous, today_date
+    rescue => exception
+        graph_time()
+        begin
+            @graph_db.execute "ALTER TABLE graph ADD COLUMN _#{userId} INT DEFAULT 0"
+        rescue
+        end
+        add_to_graph(userId, int)
+    end
+end
+
+def subtract_from_graph(userId, int)
+    today_date = Time.now.to_date.to_time.to_i
+    begin
+        previous = @graph_db.get_first_value "SELECT _#{userId} FROM graph WHERE time = ?", today_date
+        @graph_db.execute "UPDATE graph SET _#{userId}=? WHERE time=?", previous-int, today_date
+    rescue => exception
+        graph_time()
+        begin
+            @graph_db.execute "ALTER TABLE graph ADD COLUMN _#{userId} INT DEFAULT 0"
+        rescue
+        end
+        add_to_graph(userId, int)
+    end
+end
+
+graph_time()
+
+@bot.command :graph do |event|
+    graph = Gruff::Line.new
+    graph.title = "New Cards Per Day"
+    a = @db.execute "SELECT userID FROM stats"
+    x_axis = []
+    x = @graph_db.execute "SELECT time FROM graph"
+    x.each {|time| x_axis << Time.at(time["time"]).strftime("%d/%m/%Y")}
+    a.each do |user|
+        userId = user["userId"]
+        data_points = []
+        raw_data = @graph_db.execute "SELECT _#{userId} from graph"
+        raw_data.each {|point| data_points << point.values[0]}
+        graph.data("#{@bot.user(userId).name}", data_points)
+        p data_points
+    end
+    graph.labels = Hash[x_axis.collect { |time| [x_axis.find_index(time), time]}]
+    p Hash[x_axis.collect { |time| [x_axis.find_index(time), time]}]
+    graph.x_axis_label = "Date"
+    graph.y_axis_label = "Cards"
+    graph.write('graph.png')
+
+    @bot.send_file(event.channel, File.open('graph.png', 'r'))
+end
+
 @bot.run
+
