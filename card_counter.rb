@@ -33,7 +33,8 @@ end
                     Discordrb::Webhooks::EmbedField.new({name: "See Your Total", value: ";cards [@user/user id/(empty)]"}),
                     Discordrb::Webhooks::EmbedField.new({name: "Set a Limit", value: ";limit [radical/kanji/vocab] [number]\nCan be set to 0 if you want to remove your limit"}),
                     Discordrb::Webhooks::EmbedField.new({name: "Track Cards", value: ";track [on/off/reset]"}),
-                    Discordrb::Webhooks::EmbedField.new({name: "Leaderboards", value: ";leaderboard [radical/kanji/vocab/all/(empty)]"})]
+                    Discordrb::Webhooks::EmbedField.new({name: "Leaderboards", value: ";leaderboard [radical/kanji/vocab/all/(empty)]"}),
+                    Discordrb::Webhooks::EmbedField.new({name: "Graph of Cards/Day", value: ";graph"})]
         embed.fields = fields
         embed.footer = Discordrb::Webhooks::EmbedFooter.new(text: "Created by Vincent Y")
     end
