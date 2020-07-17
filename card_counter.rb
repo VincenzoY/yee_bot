@@ -16,6 +16,23 @@ require 'gruff'
 puts "This bot's invite URL is #{@bot.invite_url}."
 puts 'Click on it to invite it to your server.'
 
+@bot.ready() do
+    run()
+end
+
+def run()
+    begin
+        @a.kill
+    rescue
+    end
+    @a = Thread.new do
+        loop do
+            graph_time()
+            sleep(86430)
+        end
+    end
+end
+
 # Commands
 
 @bot.message(content: 'Ping!') do |event|
@@ -222,7 +239,7 @@ end
 
 def card_display(cards, total)
     if total.to_i > 0
-        return "#{cards} / #{total} (#{(cards.to_f/total.to_f*100).round(1)}%)"
+        return "#{cards} / #{total}\n(#{(cards.to_f/total.to_f*100).round(1)}%)"
         p total.inspect
     else
         return "#{cards}"
@@ -256,7 +273,6 @@ end
 def graph_time()
     last_time = @graph_db.get_first_value "SELECT time FROM graph ORDER BY time DESC LIMIT 1"
     last_time ||= 0
-    p last_time
     if !(Time.at(last_time).to_date === Time.now.to_date)
         @graph_db.execute "INSERT INTO graph (time) VALUES (?)", Time.now.to_date.to_time.to_i
     end
@@ -292,8 +308,6 @@ def subtract_from_graph(userId, int)
     end
 end
 
-graph_time()
-
 @bot.command :graph do |event|
     graph = Gruff::Line.new
     graph.title = "New Cards Per Day"
@@ -304,15 +318,24 @@ graph_time()
     a.each do |user|
         userId = user["userId"]
         data_points = []
-        raw_data = @graph_db.execute "SELECT _#{userId} from graph"
-        raw_data.each {|point| data_points << point.values[0]}
-        graph.data("#{@bot.user(userId).name}", data_points)
-        p data_points
+        begin
+            raw_data = @graph_db.execute "SELECT _#{userId} from graph"
+            raw_data.each {|point| data_points << point.values[0]}
+            graph.data("#{@bot.user(userId).name}", data_points)
+        rescue
+        end
     end
-    graph.labels = Hash[x_axis.collect { |time| [x_axis.find_index(time), time]}]
-    p Hash[x_axis.collect { |time| [x_axis.find_index(time), time]}]
+    graph.labels = Hash[x_axis.collect.with_index { |time, index| [index, time]}]
     graph.x_axis_label = "Date"
     graph.y_axis_label = "Cards"
+    graph.theme = {
+        colors: %w[#023FA5 #7D87B9 #BEC1D4 #D6BCC0 #BB7784 #FFFFFF #4A6FE3 #8595E1 #B5BBE3 #E6AFB9 #E07B91 #D33F6A #11C638 #8DD593 #C6DEC7 #EAD3C6 #F0B98D #EF9708 #0FCFC0 #9CDED6 #D5EAE7 #F3E1EB #F6C4E1 #F79CD4],
+        marker_color: 'white',
+        font_color: 'white',
+        background_colors: 'transparent'
+    }
+    graph.baseline_value = 0
+    graph.baseline_color = "white"
     graph.write('graph.png')
 
     @bot.send_file(event.channel, File.open('graph.png', 'r'))
