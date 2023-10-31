@@ -28,6 +28,7 @@ GEM
     netrc (0.11.0)
     opus-ruby (1.0.1)
       ffi
+    pkg-config (1.5.5)
     rbnacl (3.4.0)
       ffi
     rest-client (2.1.0)
@@ -35,7 +36,8 @@ GEM
       http-cookie (>= 1.0.2, < 2.0)
       mime-types (>= 1.16, < 4.0)
       netrc (~> 0.8)
-    rmagick (4.1.2)
+    rmagick (5.3.0)
+      pkg-config (~> 1.4)
     sqlite3 (1.4.2)
     unf (0.1.4)
       unf_ext
